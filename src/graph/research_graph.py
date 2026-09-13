@@ -1,6 +1,6 @@
 from agents.reranker import rerank_papers
 from typing import TypedDict
-
+from agents.query_optimizer import optimize_query
 from langgraph.graph import StateGraph, START, END
 
 from agents.research_planner import plan_research
@@ -15,6 +15,7 @@ class ResearchState(TypedDict):
     question: str
     needs_search: bool
     search_query: str
+    optimized_query: str
     reason: str
     papers: list   
     answer: str
@@ -112,14 +113,29 @@ Instructions:
         "answer": response.content
     }
 
+def query_optimizer_node(state: ResearchState):
+    print("\n[Query Optimizer Node]")
 
+    question = state["question"]
+
+    optimized_query = optimize_query(question)
+
+    print("Original question:")
+    print(question)
+
+    print("\nOptimized PubMed query:")
+    print(optimized_query)
+
+    return {
+        "optimized_query": optimized_query
+    }
 # =========================
 # 4. 构建 Graph
 # =========================
 def pubmed_node(state: ResearchState):
     print("\n[PubMed Node]")
 
-    query = state["search_query"]
+    query = state["optimized_query"]
 
     print("Search query:", query)
 
@@ -153,6 +169,7 @@ def pubmed_node(state: ResearchState):
 graph_builder = StateGraph(ResearchState)
 
 graph_builder.add_node("planner", planner_node)
+graph_builder.add_node("query_optimizer", query_optimizer_node)
 graph_builder.add_node("pubmed", pubmed_node)
 graph_builder.add_node("researcher", researcher_node)
 
@@ -162,10 +179,11 @@ graph_builder.add_conditional_edges(
     "planner",
     route_after_planner,
     {
-        "pubmed": "pubmed",
+        "pubmed": "query_optimizer",
         "researcher": "researcher",
     },
 )
+graph_builder.add_edge("query_optimizer", "pubmed")
 graph_builder.add_edge("pubmed", "researcher")
 graph_builder.add_edge("researcher", END)
 
@@ -182,6 +200,7 @@ if __name__ == "__main__":
         "question": "What are recent applications of LLMs in protein design?",
         "needs_search": False,
         "search_query": "",
+        "optimized_query": "",
         "reason": "",
         "papers": [],        
         "answer": "",
